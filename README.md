@@ -209,6 +209,7 @@ The window shows which device is in use at the bottom of the screen.
 | `pipeline.py` | Reading, OCR, translation, and editing of the PDF |
 | `hardware.py` | GPU detection and device selection |
 | `requirements.txt` | Python libraries (PyTorch is installed separately, see section 3) |
+| `assets/` | Logo files: `logo.png` (original artwork), `logo_header.png` and `logo_icon.png` (transparent versions used by the window) |
 | `samples/` | Test PDFs and their translated outputs |
 | `logs/` | Technical log written when the window runs without a console |
 

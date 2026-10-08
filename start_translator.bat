@@ -7,7 +7,7 @@ rem Later runs: start the program straight away.
 setlocal
 cd /d "%~dp0"
 
-if exist ".venv\Scripts\pythonw.exe" goto launch
+if exist ".venv\setup_complete" goto launch
 
 echo ==========================================================
 echo  First-time setup. This downloads PyTorch and the other
@@ -30,6 +30,7 @@ if errorlevel 1 goto failed
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto failed
 
+echo. > ".venv\setup_complete"
 echo.
 echo Setup complete.
 echo.

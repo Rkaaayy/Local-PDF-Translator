@@ -25,6 +25,7 @@ if sys.stdout is None or sys.stderr is None:
     sys.stdout = sys.stderr = _log
 
 import tkinter as tk  # noqa: E402
+import tkinter.font as tkfont  # noqa: E402
 from tkinter import filedialog, messagebox, ttk  # noqa: E402
 
 from hardware import (default_batch_size, format_report, inspect_hardware,  # noqa: E402
@@ -76,22 +77,51 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("PDF Translator - runs locally on this PC")
-        self.geometry("780x760")
-        self.minsize(700, 700)
+        self.geometry("780x860")
+        self.minsize(700, 780)
 
         self.files: list[Path] = []
         self.events: queue.Queue = queue.Queue()
         self.busy = False
         self.hardware = None
+        self._logo_icon = None
+        self._logo_header = None
+        self._load_logo()
 
         self._build()
         threading.Thread(target=self._load_hardware, daemon=True).start()
         self.after(100, self._poll)
 
     # ------------------------------------------------------------------ UI
+    def _load_logo(self) -> None:
+        """Load the logo for the window icon (title bar / taskbar) and the header."""
+        icon_path = APP_DIR / "assets" / "logo_icon.png"
+        header_path = APP_DIR / "assets" / "logo_header.png"
+        try:
+            if icon_path.exists():
+                self._logo_icon = tk.PhotoImage(file=str(icon_path))
+                self.iconphoto(True, self._logo_icon)
+            if header_path.exists():
+                self._logo_header = tk.PhotoImage(file=str(header_path))
+        except tk.TclError:
+            self._logo_icon = None
+            self._logo_header = None
+
     def _build(self) -> None:
         root = ttk.Frame(self, padding=12)
         root.pack(fill="both", expand=True)
+
+        # Header with the logo and the app name
+        header = ttk.Frame(root)
+        header.pack(fill="x", pady=(0, 6))
+        if self._logo_header is not None:
+            ttk.Label(header, image=self._logo_header).pack(side="left", padx=(0, 12))
+        title_box = ttk.Frame(header)
+        title_box.pack(side="left", fill="x")
+        title_font = tkfont.Font(family="TkDefaultFont", size=18, weight="bold")
+        ttk.Label(title_box, text="PDF Translator", font=title_font).pack(anchor="w")
+        ttk.Label(title_box, text="Translate PDFs into English. Your documents never leave this PC.",
+                  foreground="#555555").pack(anchor="w")
 
         # 1. Files
         files_box = ttk.LabelFrame(root, text="1. PDF files")
