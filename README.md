@@ -13,6 +13,18 @@ documents never leave your machine.
 - **Unclear text stays in its original language:** text the OCR is not confident about, low-contrast or invisible text, and text that does not fit its area is left untouched.
 - **Report:** every run writes a `_report.txt` listing what was translated and what was kept, with reasons.
 
+## Why I built this
+
+I wanted to translate contracts and other important documents without uploading them to an online service. Most translation tools send your files to a remote server, and once a document leaves your computer you no longer control where it goes, who can access it, or how long it is kept.
+
+So this tool is designed to keep everything local:
+
+- Your documents are processed on your own PC, from start to finish.
+- Translation, OCR, and PDF editing run offline. The only internet access is a one-time download of the language and OCR models.
+- No accounts, no API keys, and no third-party services are involved.
+
+Your document content is never sent anywhere.
+
 ## 1. Requirements
 
 - Python 3.10 to 3.13 (64-bit)
