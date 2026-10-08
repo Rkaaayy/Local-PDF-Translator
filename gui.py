@@ -159,8 +159,8 @@ class App(tk.Tk):
         self.conf_label.pack(side="left", padx=8)
         ttk.Label(
             opts,
-            text=("Scanned text the OCR is less sure about than this stays in its original "
-                  "language. Lower = translate more text. Higher = keep more original text."),
+            text=("Scanned text: OCR's (Optical Character Recognition) confidence level. If the text is not clearly legible, it will be kept as it is, and not translated into English."
+                  " Lower values will translate more text, while higher values will keep more text in its original"),
             wraplength=560, foreground="#555555",
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 6))
 
