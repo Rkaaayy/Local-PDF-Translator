@@ -6,6 +6,7 @@ run on the GPU when the device is 'cuda'.
 
 from __future__ import annotations
 
+import gc
 import re
 import time
 from collections import Counter, defaultdict
@@ -557,7 +558,7 @@ def _is_scanned(page: pymupdf.Page) -> bool:
 
 def translate_document(src: Path, dst: Path, *, translator: Translator, detector,
                        ocr_factory, source_override: str | None,
-                       min_ocr_conf: float) -> dict:
+                       min_ocr_conf: float, after_reading=None) -> dict:
     start = time.perf_counter()
     doc = pymupdf.open(src)
     skipped: Counter = Counter()
@@ -573,6 +574,10 @@ def translate_document(src: Path, dst: Path, *, translator: Translator, detector
         else:
             arr = render_page(page, TEXT_SAMPLE_SCALE)
             units += text_layer_units(page, page_no, arr, skipped)
+
+    # Free the OCR models before translating, so both never need to fit in memory at once
+    if after_reading is not None:
+        after_reading()
 
     # 2) Translate all units together
     dominant = "mul"
@@ -691,6 +696,10 @@ class PDFTranslator:
             self._ocr = OCREngine(self.ocr_langs, self.device)
         return self._ocr
 
+    def _release_ocr(self) -> None:
+        self._ocr = None
+        gc.collect()
+
     def translate_file(self, src: Path, dst: Path) -> dict:
         if self.source_lang is None and self._detector is None:
             self._detector = build_detector()
@@ -701,8 +710,12 @@ class PDFTranslator:
             ocr_factory=self._get_ocr,
             source_override=self.source_lang,
             min_ocr_conf=self.min_ocr_conf,
+            after_reading=self._release_ocr,
         )
         report_path = dst.with_name(f"{dst.stem}_report.txt")
         report_path.write_text(stats.pop("report"), encoding="utf-8")
         stats["report_path"] = report_path
+        # Free the translation models so the next file starts with the least memory use
+        self.translator._models.clear()
+        gc.collect()
         return stats
