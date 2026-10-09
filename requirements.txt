@@ -2,7 +2,7 @@
 #   pip install -r requirements.txt
 torch
 torchvision
-transformers>=4.40
+transformers>=4.51,<5   # tested with 4.57; 5.x not tested
 sentencepiece
 sacremoses
 pymupdf

@@ -1,6 +1,7 @@
 """
-Models: Helsinki-NLP Opus-MT (CC-BY-4.0) for translation, EasyOCR (Apache-2.0) for
-OCR, and PyMuPDF (AGPL, fine for personal use) for PDF editing. Translation and OCR
+Models: Helsinki-NLP Opus-MT (CC-BY-4.0) and Meta NLLB-200 (CC-BY-NC 4.0, used for
+Indian languages) for translation, EasyOCR (Apache-2.0) for OCR, and PyMuPDF (AGPL,
+fine for personal use) for PDF editing. Translation and OCR
 run on the GPU when the device is 'cuda'.
 """
 
@@ -9,8 +10,10 @@ from __future__ import annotations
 import gc
 import re
 import time
+import unicodedata
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 import numpy as np
@@ -30,12 +33,29 @@ MAX_SEGMENT_CHARS = 350       # translate in chunks of about this many character
 OPUS_MODEL = "Helsinki-NLP/opus-mt-{src}-en"
 FALLBACK_MODEL = "Helsinki-NLP/opus-mt-mul-en"   # multilingual -> English
 
+# Indian languages are translated with NLLB-200 (one model covers all of them).
+NLLB_MODEL = "facebook/nllb-200-distilled-600M"
+NLLB_TARGET = "eng_Latn"
+NLLB_LANGS = {                                    # our code -> NLLB (FLORES-200) code
+    "hi": "hin_Deva", "bn": "ben_Beng", "ta": "tam_Taml", "te": "tel_Telu",
+    "mr": "mar_Deva", "gu": "guj_Gujr", "kn": "kan_Knda", "ml": "mal_Mlym",
+    "pa": "pan_Guru", "ur": "urd_Arab", "or": "ory_Orya",
+}
+# Unicode script name (first word of the character name) -> candidate language codes
+INDIC_SCRIPTS = {
+    "DEVANAGARI": ["hi", "mr"], "BENGALI": ["bn"], "TAMIL": ["ta"], "TELUGU": ["te"],
+    "KANNADA": ["kn"], "MALAYALAM": ["ml"], "GUJARATI": ["gu"], "GURMUKHI": ["pa"],
+    "ORIYA": ["or"],
+}
+
 LANGUAGE_NAMES = {
     "de": "German", "fr": "French", "es": "Spanish", "it": "Italian", "pt": "Portuguese",
     "nl": "Dutch", "ru": "Russian", "uk": "Ukrainian", "pl": "Polish", "cs": "Czech",
     "sv": "Swedish", "da": "Danish", "fi": "Finnish", "no": "Norwegian", "el": "Greek",
     "zh": "Chinese", "ja": "Japanese", "ko": "Korean", "ar": "Arabic", "he": "Hebrew",
     "tr": "Turkish", "hi": "Hindi", "vi": "Vietnamese", "id": "Indonesian", "en": "English",
+    "bn": "Bengali", "ta": "Tamil", "te": "Telugu", "mr": "Marathi", "gu": "Gujarati",
+    "kn": "Kannada", "ml": "Malayalam", "pa": "Punjabi", "ur": "Urdu", "or": "Odia",
     "mul": "mixed languages",
 }
 
@@ -376,6 +396,31 @@ class Translator:
         self.beams = beams
         self.use_fp16 = use_fp16 and device == "cuda"
         self._models: dict[str, tuple] = {}
+        self._nllb: tuple | None = None      # (tokenizer, model), shared by all Indian languages
+
+    def _load_nllb(self):
+        if self._nllb is None:
+            from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+            tok = AutoTokenizer.from_pretrained(NLLB_MODEL)
+            model = AutoModelForSeq2SeqLM.from_pretrained(NLLB_MODEL, low_cpu_mem_usage=True)
+            model.eval()
+            if self.use_fp16:
+                model.half()
+            model.to(self.device)
+            self._nllb = (tok, model)
+            tqdm.write(f"  loaded {NLLB_MODEL} on {self.device}" + (" (fp16)" if self.use_fp16 else ""))
+        return self._nllb
+
+    def _generate_nllb(self, lang: str, texts: list[str]) -> list[str]:
+        tok, model = self._load_nllb()
+        tok.src_lang = NLLB_LANGS[lang]
+        enc = tok(texts, return_tensors="pt", padding=True,
+                  truncation=True, max_length=512).to(self.device)
+        max_new = min(512, int(enc["input_ids"].shape[1] * 2) + 16)
+        with self.torch.inference_mode():
+            out = model.generate(**enc, num_beams=self.beams, max_new_tokens=max_new,
+                                 forced_bos_token_id=tok.convert_tokens_to_ids(NLLB_TARGET))
+        return tok.batch_decode(out, skip_special_tokens=True)
 
     def _load(self, lang: str):
         if lang in self._models:
@@ -419,14 +464,18 @@ class Translator:
             groups[lang].append(idx)
 
         for lang, indices in groups.items():
-            tok, model, _ = self._load(lang)
+            if lang in NLLB_LANGS:
+                generate = partial(self._generate_nllb, lang)
+            else:
+                tok, model, _ = self._load(lang)
+                generate = partial(self._generate, tok, model)
             order = sorted(indices, key=lambda i: len(segments[i][1]), reverse=True)
             bar = tqdm(total=len(order), desc=f"Translating [{lang}]", unit="seg")
             pos, bs = 0, self.batch_size
             while pos < len(order):
                 batch = order[pos:pos + bs]
                 try:
-                    outputs = self._generate(tok, model, [segments[i][1] for i in batch])
+                    outputs = generate([segments[i][1] for i in batch])
                 except self.torch.cuda.OutOfMemoryError:
                     self.torch.cuda.empty_cache()
                     if bs == 1:
@@ -447,9 +496,35 @@ def build_detector():
     return LanguageDetectorBuilder.from_all_languages().build()
 
 
+def _indic_script(text: str) -> str | None:
+    """Return the Indian script name if most letters in the text belong to one, else None."""
+    counts: Counter = Counter()
+    letters = 0
+    for ch in text:
+        if ch.isalpha():
+            letters += 1
+            script = unicodedata.name(ch, "").split(" ")[0]
+            if script in INDIC_SCRIPTS:
+                counts[script] += 1
+    if not letters or not counts:
+        return None
+    script, n = counts.most_common(1)[0]
+    return script if n >= 0.5 * letters else None
+
+
 def _detect(detector, text: str) -> str | None:
     if len(text.split()) < 4:
         return None
+    script = _indic_script(text)
+    if script:
+        # The script decides the family; the general detector only picks between
+        # candidates that share a script (e.g. Hindi and Marathi).
+        candidates = INDIC_SCRIPTS[script]
+        if len(candidates) == 1:
+            return candidates[0]
+        lang = detector.detect_language_of(text)
+        guess = lang.iso_code_639_1.name.lower() if lang else None
+        return guess if guess in candidates else candidates[0]
     lang = detector.detect_language_of(text)
     return lang.iso_code_639_1.name.lower() if lang else None
 
@@ -569,6 +644,9 @@ def translate_document(src: Path, dst: Path, *, translator: Translator, detector
     for page_no in tqdm(range(len(doc)), desc="Reading pages", unit="page"):
         page = doc[page_no]
         if _is_scanned(page):
+            if ocr_factory is None:
+                skipped["scanned page: OCR is not available for this language (kept unchanged)"] += 1
+                continue
             ocr_pages.append(page_no)
             units += ocr_units(page, page_no, ocr_factory(), min_ocr_conf, skipped)
         else:
@@ -580,7 +658,7 @@ def translate_document(src: Path, dst: Path, *, translator: Translator, detector
         after_reading()
 
     # 2) Translate all units together
-    dominant = "mul"
+    dominant = source_override or "mul"
     if units:
         dominant = translate_units(units, translator, detector, source_override)
 
@@ -644,7 +722,7 @@ def translate_document(src: Path, dst: Path, *, translator: Translator, detector
         pass
     meta = {k: (v or "") for k, v in doc.metadata.items()}
     meta["subject"] = ("English translation (layout preserved), translated locally "
-                       "with Helsinki-NLP Opus-MT (CC-BY-4.0)")
+                       "with Helsinki-NLP Opus-MT or Meta NLLB-200")
     doc.set_metadata(meta)
     doc.save(dst, garbage=3, deflate=True)
     doc.close()
@@ -684,7 +762,8 @@ class PDFTranslator:
                  min_ocr_conf: float = 0.6):
         self.device = device
         self.source_lang = source_lang
-        self.ocr_langs = ocr_langs or ["en"]
+        self.ocr_langs = ["en"] if ocr_langs is None else ocr_langs
+        self.ocr_enabled = len(self.ocr_langs) > 0   # empty list: no OCR for this language
         self.min_ocr_conf = min_ocr_conf
         self.translator = Translator(device, batch_size, beams, use_fp16)
         self._detector = None
@@ -707,7 +786,7 @@ class PDFTranslator:
             src, dst,
             translator=self.translator,
             detector=self._detector if self.source_lang is None else None,
-            ocr_factory=self._get_ocr,
+            ocr_factory=self._get_ocr if self.ocr_enabled else None,
             source_override=self.source_lang,
             min_ocr_conf=self.min_ocr_conf,
             after_reading=self._release_ocr,
@@ -717,5 +796,6 @@ class PDFTranslator:
         stats["report_path"] = report_path
         # Free the translation models so the next file starts with the least memory use
         self.translator._models.clear()
+        self.translator._nllb = None
         gc.collect()
         return stats

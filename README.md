@@ -30,7 +30,7 @@ Your document content is never sent anywhere.
 - **Windows 10 or 11, or Linux**
 - **Python 3.10 to 3.13 (64-bit).** On Windows, get it from python.org and tick **"Add python.exe to PATH"** during installation. The window needs tkinter, which the python.org installer includes by default.
 - **RAM:** 8 GB recommended. Scanned pages use the most memory.
-- **Disk:** about 5 GB free for PyTorch and the models, plus about 0.5 GB per translation language.
+- **Disk:** about 8 GB free for PyTorch, the translation models, and the OCR models. The Indian-language model adds about 2.5 GB.
 - **For GPU use:** an NVIDIA graphics card with a recent driver. Check with `nvidia-smi` in a terminal.
 
 ## 2. Quick start on Windows
@@ -83,9 +83,11 @@ Later runs open the window straight away.
 - The log shows the device in use, the result for each file, and the report file name.
 - A translated file is named after the original with `_en` added, for example `contract_en.pdf`. The report is `contract_en_report.txt`.
 
-**Language choices:** German, French, Spanish, Italian, Portuguese, Dutch, Polish, Czech, Swedish, Danish, Finnish, Norwegian, Turkish, Russian, Ukrainian, Indonesian, Vietnamese, Arabic, Hindi, Japanese, Korean, Chinese (Simplified), and English. Choosing English skips translation, so you can use it only for OCR.
+**Language choices:** German, French, Spanish, Italian, Portuguese, Dutch, Polish, Czech, Swedish, Danish, Finnish, Norwegian, Turkish, Russian, Ukrainian, Indonesian, Vietnamese, Arabic, Japanese, Korean, Chinese (Simplified), and English. Choosing English skips translation, so you can use it only for OCR.
 
-> **Note on scanned pages with Auto-detect:** the tool reads the common Latin-alphabet languages (English, German, French, Spanish, Italian, Portuguese, Dutch, Polish). For scanned Russian, Ukrainian, Chinese, Japanese, Korean, Arabic, or Hindi documents, pick the language explicitly.
+**Indian languages:** Hindi, Bengali, Tamil, Telugu, Marathi, Kannada, Urdu, Gujarati, Malayalam, Punjabi, and Odia. They are translated with Meta's NLLB-200 model (see section 12). Scanned pages can be read with OCR for Hindi, Bengali, Tamil, Telugu, Marathi, Kannada, and Urdu. For Gujarati, Malayalam, Punjabi, and Odia, OCR is not available, so scanned pages stay unchanged and the report says so. Text-based pages are still translated.
+
+> **Note on scanned pages with Auto-detect:** the tool reads the common Latin-alphabet languages (English, German, French, Spanish, Italian, Portuguese, Dutch, Polish). For scanned Russian, Ukrainian, Chinese, Japanese, Korean, Arabic, or any Indian-language document, pick the language explicitly.
 
 ## 5. Command line (optional)
 
@@ -103,6 +105,9 @@ python translate_pdf.py ./documents -o ./english
 
 # Scanned pages in German (OCR reads these languages)
 python translate_pdf.py scan.pdf --ocr-langs de,en
+
+# Turn OCR off: scanned pages are left unchanged
+python translate_pdf.py scan.pdf --ocr-langs none
 
 # Stricter OCR: keep more lines in the original language (default 0.6)
 python translate_pdf.py scan.pdf --ocr-langs de,en --min-ocr-confidence 0.8
@@ -189,7 +194,8 @@ The window shows which device is in use at the bottom of the screen.
 | The computer runs out of memory on scanned pages | Close other programs, and translate scanned files one at a time. |
 | A scanned page is mostly left in its original language | Pick the document's language in the window, or lower the OCR confidence threshold to translate more lines. |
 | Translated text looks cramped | The English was too long for the original area, so it was shrunk. Areas that could not fit at all are listed in the report. |
-| Translation looks wrong for a language | Opus-MT has a dedicated model for many languages. Others fall back to a multilingual model, which is weaker. |
+| Translation looks wrong for a language | Opus-MT has a dedicated model for many languages. Others fall back to a multilingual model, which is weaker. Indian languages use NLLB-200, which is general-purpose.
+| Scanned Gujarati, Malayalam, Punjabi, or Odia page is unchanged | OCR for these scripts is not available, so the page is left as it is. The report lists it. Text-based pages in these languages are still translated. |
 
 ## 10. Limitations
 
@@ -198,6 +204,7 @@ The window shows which device is in use at the bottom of the screen.
 - Scanned pages keep their original image, so the English text is only as sharp as the scan.
 - A page with both a full-page image and a text layer is treated as scanned: its text layer is replaced with OCR results.
 - Machine translation is good for understanding a document, but it is not a certified translation. Check important text before relying on it.
+- Indian-language translation uses NLLB-200, a general-purpose model. It is less reliable on specialised legal or medical text than on everyday text.
 
 ## 11. Project files
 
@@ -216,9 +223,10 @@ The window shows which device is in use at the bottom of the screen.
 ## 12. Licenses of the components
 
 - Opus-MT translation models: CC-BY-4.0 (attribution is included in the output PDF's subject field)
+- NLLB-200 translation model (Meta, used for Indian languages): CC-BY-NC 4.0. It is non-commercial only. The model is downloaded on first use and is not included in this project's files, but using it is still governed by its license.
 - EasyOCR: Apache-2.0
 - PyMuPDF: AGPL-3.0 (fine for personal, non-commercial use; a commercial license is needed to distribute it in a closed product)
 - PyTorch, Transformers: BSD / Apache-2.0
 - lingua-language-detector: Apache-2.0
 
-This project is for personal use, so no commercial licensing is needed. If you ever distribute it commercially, check each component's license again.
+This project is for personal use, so no commercial licensing is needed. If you ever distribute it commercially, the NLLB-200 license (non-commercial) and the PyMuPDF license (AGPL) must be checked and possibly replaced first.

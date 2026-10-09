@@ -55,6 +55,16 @@ LANGUAGES = [
     ("vi", "Vietnamese", "vi"),
     ("ar", "Arabic", "ar"),
     ("hi", "Hindi", "hi"),
+    ("bn", "Bengali", "bn"),
+    ("ta", "Tamil", "ta"),
+    ("te", "Telugu", "te"),
+    ("mr", "Marathi", "mr"),
+    ("gu", "Gujarati", None),      # EasyOCR cannot read this script
+    ("kn", "Kannada", "kn"),
+    ("ml", "Malayalam", None),     # EasyOCR cannot read this script
+    ("pa", "Punjabi", None),       # EasyOCR cannot read this script
+    ("ur", "Urdu", "ur"),
+    ("or", "Odia", None),          # EasyOCR cannot read this script
     ("ja", "Japanese", "ja"),
     ("ko", "Korean", "ko"),
     ("zh", "Chinese (Simplified)", "ch_sim"),
@@ -68,8 +78,11 @@ AUTO_OCR_LANGS = ["en", "de", "fr", "es", "it", "pt", "nl", "pl"]
 
 
 def ocr_languages(lang: str | None) -> list[str]:
+    """OCR languages for scanned pages. An empty list means OCR is not available."""
     if lang is None:
         return AUTO_OCR_LANGS
+    if OCR_CODE[lang] is None:
+        return []
     return list(dict.fromkeys([OCR_CODE[lang], "en"]))
 
 
@@ -159,8 +172,8 @@ class App(tk.Tk):
         self.conf_label.pack(side="left", padx=8)
         ttk.Label(
             opts,
-            text=("Scanned text: OCR's (Optical Character Recognition) confidence level. If the text is not clearly legible, it will be kept as it is, and not translated into English."
-                  " Lower values will translate more text, while higher values will keep more text in its original"),
+            text=("Scanned text the OCR is less sure about than this stays in its original "
+                  "language. Lower = translate more text. Higher = keep more original text."),
             wraplength=560, foreground="#555555",
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=8, pady=(0, 6))
 
@@ -248,6 +261,9 @@ class App(tk.Tk):
         self.progress.config(maximum=len(self.files), value=0)
         self.log(f"Starting: {len(self.files)} file(s), language: {label}, "
                  f"OCR confidence threshold: {conf:.2f}")
+        if lang is not None and OCR_CODE[lang] is None:
+            self.log("Note: OCR is not available for this language. Scanned pages will be "
+                     "left unchanged; text-based pages are still translated.")
         threading.Thread(target=self._worker, args=(list(self.files), lang, conf, out_dir),
                          daemon=True).start()
 

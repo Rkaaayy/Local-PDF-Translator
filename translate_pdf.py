@@ -61,7 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--source-lang", metavar="CODE",
                         help="source language code such as de, fr, es (skips auto-detection)")
     parser.add_argument("--ocr-langs", default="en",
-                        help="comma-separated OCR languages for scanned pages, e.g. en,de (default: en)")
+                        help="comma-separated OCR languages for scanned pages, e.g. en,de; "
+                             "use 'none' to turn OCR off (default: en)")
     parser.add_argument("--min-ocr-confidence", type=float, default=0.2,
                         help="OCR lines below this confidence (0-1) are kept in their original "
                              "language (default: 0.2)")
@@ -103,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     from pipeline import PDFTranslator
 
     ocr_langs = [code.strip() for code in args.ocr_langs.split(",") if code.strip()]
+    if ocr_langs == ["none"]:
+        ocr_langs = []          # no OCR: scanned pages are left unchanged
     translator = PDFTranslator(
         device=device,
         batch_size=batch_size,
